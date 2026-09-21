@@ -5,6 +5,7 @@ import { createClient, chains } from "genlayer-js";
 
 const CONTRACT_ADDRESS = "0xe822FA3A2b6aA657EddBEbbFF8dC1F9926695e36";
 const EXPLORER_BASE = "https://explorer-asimov.genlayer.com";
+const TARGET_CHAIN_ID_HEX = "0x107d"; // 4221
 
 interface OnChainCase {
   case_id: string;
@@ -21,7 +22,7 @@ interface OnChainCase {
 
 export default function Home() {
   const [account, setAccount] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"create" | "deliver" | "dispute" | "view">("create");
+  const [activeTab, setActiveTab] = useState<"create" | "deliver" | "dispute" | "view">("view");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
@@ -33,31 +34,59 @@ export default function Home() {
   const [requirements, setRequirements] = useState("");
   const [deliverableText, setDeliverableText] = useState("");
 
-  // Inspect state
-  const [inspectId, setInspectId] = useState("case_escrow_01");
+  // Inspect state - default to live on-chain case
+  const [inspectId, setInspectId] = useState("case_v2_01");
   const [inspectedCase, setInspectedCase] = useState<OnChainCase | null>(null);
   const [totalCases, setTotalCases] = useState<number | null>(null);
 
-  // Initialize public client for reads
+  // Read-only client
   const getPublicClient = () => {
     return createClient({ chain: chains.testnetAsimov });
   };
 
-  // Connect wallet
-  const connectWallet = async () => {
-    if (typeof window !== "undefined" && (window as any).ethereum) {
-      try {
-        const accounts = await (window as any).ethereum.request({
-          method: "eth_requestAccounts",
-        });
-        if (accounts && accounts.length > 0) {
-          setAccount(accounts[0]);
-        }
-      } catch (err: any) {
-        setStatusMessage(`Wallet connection failed: ${err.message}`);
-      }
-    } else {
+  // Ensure wallet is connected and on GenLayer Asimov Testnet
+  const ensureNetworkAndAccount = async (): Promise<string | null> => {
+    if (typeof window === "undefined" || !(window as any).ethereum) {
       setStatusMessage("MetaMask or compatible Web3 wallet not detected.");
+      return null;
+    }
+
+    const ethereum = (window as any).ethereum;
+    try {
+      const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+      const current = accounts[0];
+      setAccount(current);
+
+      const chainIdHex = await ethereum.request({ method: "eth_chainId" });
+      if (chainIdHex !== TARGET_CHAIN_ID_HEX) {
+        try {
+          await ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: TARGET_CHAIN_ID_HEX }],
+          });
+        } catch (switchError: any) {
+          if (switchError.code === 4902) {
+            await ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [
+                {
+                  chainId: TARGET_CHAIN_ID_HEX,
+                  chainName: "GenLayer Asimov Testnet",
+                  nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+                  rpcUrls: ["https://rpc-asimov.genlayer.com"],
+                  blockExplorerUrls: ["https://explorer-asimov.genlayer.com/"],
+                },
+              ],
+            });
+          } else {
+            throw switchError;
+          }
+        }
+      }
+      return current;
+    } catch (err: any) {
+      setStatusMessage(`Wallet connection failed: ${err.message}`);
+      return null;
     }
   };
 
@@ -76,8 +105,30 @@ export default function Home() {
     }
   };
 
+  // Inspect case on-chain
+  const handleInspectCase = async (targetId?: string) => {
+    const queryId = targetId || inspectId;
+    if (!queryId) return;
+
+    setStatusMessage(`Reading case "${queryId}" directly from GenLayer Asimov state...`);
+    try {
+      const client = getPublicClient();
+      const res = await client.readContract({
+        address: CONTRACT_ADDRESS,
+        functionName: "get_case",
+        args: [queryId],
+      });
+      setInspectedCase(res as unknown as OnChainCase);
+      setStatusMessage(`Case "${queryId}" loaded from on-chain storage.`);
+    } catch (err: any) {
+      setInspectedCase(null);
+      setStatusMessage(`Case not found on-chain: ${err.message || String(err)}`);
+    }
+  };
+
   useEffect(() => {
     fetchTotalCases();
+    handleInspectCase("case_v2_01");
   }, []);
 
   // 1. Create Case
@@ -88,13 +139,17 @@ export default function Home() {
       return;
     }
 
+    const activeAccount = await ensureNetworkAndAccount();
+    if (!activeAccount) return;
+
     setIsProcessing(true);
-    setStatusMessage("Submitting create_case transaction to GenLayer Asimov...");
+    setStatusMessage("Submitting create_case transaction via MetaMask to GenLayer Asimov...");
     setLastTxHash(null);
 
     try {
       const client = createClient({
         chain: chains.testnetAsimov,
+        account: activeAccount as `0x${string}`,
       });
 
       const tx = await client.writeContract({
@@ -108,7 +163,7 @@ export default function Home() {
       setStatusMessage(`Transaction broadcasted: ${tx}. Waiting for consensus...`);
 
       const receipt = await client.waitForTransactionReceipt({ hash: tx });
-      setStatusMessage(`Case "${caseId}" created successfully! Status: ${receipt.statusName || "ACCEPTED"}`);
+      setStatusMessage(`Case "${caseId}" created successfully! Execution: ${receipt.txExecutionResultName || "FINISHED_WITH_RETURN"}`);
       fetchTotalCases();
       setCaseId("");
       setFreelancerAddr("");
@@ -128,13 +183,17 @@ export default function Home() {
       return;
     }
 
+    const activeAccount = await ensureNetworkAndAccount();
+    if (!activeAccount) return;
+
     setIsProcessing(true);
-    setStatusMessage("Submitting deliverable on-chain...");
+    setStatusMessage("Submitting deliverable on-chain via MetaMask...");
     setLastTxHash(null);
 
     try {
       const client = createClient({
         chain: chains.testnetAsimov,
+        account: activeAccount as `0x${string}`,
       });
 
       const tx = await client.writeContract({
@@ -164,6 +223,9 @@ export default function Home() {
       return;
     }
 
+    const activeAccount = await ensureNetworkAndAccount();
+    if (!activeAccount) return;
+
     setIsProcessing(true);
     setStatusMessage("Triggering GenLayer Equivalence Principle consensus across AI validator committee...");
     setLastTxHash(null);
@@ -171,6 +233,7 @@ export default function Home() {
     try {
       const client = createClient({
         chain: chains.testnetAsimov,
+        account: activeAccount as `0x${string}`,
       });
 
       const tx = await client.writeContract({
@@ -183,9 +246,7 @@ export default function Home() {
       setLastTxHash(tx);
       setStatusMessage(`Adjudication tx sent: ${tx}. AI Validators are voting...`);
       const receipt = await client.waitForTransactionReceipt({ hash: tx });
-      setStatusMessage(`Adjudication completed! Consensus result: ${receipt.resultName || "AGREE"}`);
-      
-      // Auto inspect the case after resolution
+      setStatusMessage(`Adjudication completed! Status: ${receipt.txExecutionResultName || "FINISHED_WITH_RETURN"}`);
       handleInspectCase(caseId);
     } catch (err: any) {
       setStatusMessage(`Adjudication failed: ${err.message || String(err)}`);
@@ -194,33 +255,12 @@ export default function Home() {
     }
   };
 
-  // 4. View Case on-chain
-  const handleInspectCase = async (targetId?: string) => {
-    const queryId = targetId || inspectId;
-    if (!queryId) return;
-
-    setStatusMessage(`Reading case "${queryId}" directly from GenLayer Asimov state...`);
-    try {
-      const client = getPublicClient();
-      const res = await client.readContract({
-        address: CONTRACT_ADDRESS,
-        functionName: "get_case",
-        args: [queryId],
-      });
-      setInspectedCase(res as unknown as OnChainCase);
-      setStatusMessage(`Case "${queryId}" loaded from on-chain storage.`);
-    } catch (err: any) {
-      setInspectedCase(null);
-      setStatusMessage(`Case not found or not yet registered: ${err.message || String(err)}`);
-    }
-  };
-
   return (
     <div className="container" style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1.5rem" }}>
       {/* Top Navbar */}
       <nav className="navbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2.5rem" }}>
         <div className="logo" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: 22, fontWeight: 700 }}>⚖️ GenLayer Escrow</span>
+          <span style={{ fontSize: 22, fontWeight: 700 }}>⚖️ GenLayer Arbitrator</span>
           <span className="logo-badge" style={{ fontSize: 11, background: "rgba(6, 182, 212, 0.15)", color: "var(--accent-cyan)", padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(6, 182, 212, 0.3)" }}>
             Asimov Testnet
           </span>
@@ -240,7 +280,7 @@ export default function Home() {
             </span>
           ) : (
             <button
-              onClick={connectWallet}
+              onClick={() => ensureNetworkAndAccount()}
               style={{ background: "var(--gradient-main)", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 13 }}
             >
               Connect Wallet
@@ -255,7 +295,7 @@ export default function Home() {
           Decentralized Freelance Escrow & <span style={{ background: "var(--gradient-main)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI Dispute Resolution</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", maxWidth: 680, margin: "0 auto", fontSize: "1.05rem", lineHeight: 1.6 }}>
-          Automated milestone fund release backed by real GenLayer Intelligent Contracts. Non-deterministic evaluation is judged by validator LLMs reaching consensus under the Equivalence Principle.
+          Automated milestone dispute adjudication powered by GenLayer Intelligent Contracts. Independent validator LLMs evaluate deliverable fulfillment and reach deterministic consensus via the Equivalence Principle.
         </p>
         {totalCases !== null && (
           <div style={{ marginTop: "1rem", fontSize: 13, color: "var(--accent-emerald)" }}>
@@ -266,7 +306,7 @@ export default function Home() {
 
       {/* Tabs */}
       <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: "2rem" }}>
-        {(["create", "deliver", "dispute", "view"] as const).map((tab) => (
+        {(["view", "create", "deliver", "dispute"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -282,17 +322,74 @@ export default function Home() {
               transition: "all 0.2s ease"
             }}
           >
-            {tab === "create" && "1. Create Escrow"}
-            {tab === "deliver" && "2. Submit Deliverable"}
-            {tab === "dispute" && "3. AI Adjudication"}
-            {tab === "view" && "4. Inspect On-Chain"}
+            {tab === "view" && "1. Inspect On-Chain"}
+            {tab === "create" && "2. Create Escrow"}
+            {tab === "deliver" && "3. Submit Deliverable"}
+            {tab === "dispute" && "4. AI Adjudication"}
           </button>
         ))}
       </div>
 
       {/* Interactive Container */}
       <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-glass)", borderRadius: 18, padding: "2rem", boxShadow: "var(--shadow-card)", marginBottom: "2rem" }}>
-        {/* Tab 1: Create Case */}
+        {/* Tab 1: Inspect State */}
+        {activeTab === "view" && (
+          <div>
+            <h3 style={{ fontSize: "1.3rem", marginBottom: "0.5rem" }}>Live On-Chain Case Inspector</h3>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: "1.5rem" }}>
+              Reads real-time state directly from GenLayer Asimov Testnet contract storage (<code>{CONTRACT_ADDRESS}</code>).
+            </p>
+            <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem" }}>
+              <input
+                type="text"
+                placeholder="Case ID to inspect"
+                value={inspectId}
+                onChange={(e) => setInspectId(e.target.value)}
+                style={{ flex: 1, padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-glass)", color: "#fff" }}
+              />
+              <button
+                type="button"
+                onClick={() => handleInspectCase()}
+                style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid var(--border-glass)", padding: "12px 20px", borderRadius: 8, fontWeight: 600, cursor: "pointer" }}
+              >
+                Read On-Chain
+              </button>
+            </div>
+
+            {inspectedCase && (
+              <div style={{ background: "rgba(0,0,0,0.4)", borderRadius: 12, padding: "1.5rem", border: "1px solid var(--border-glass)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
+                  <span style={{ fontSize: 18, fontWeight: 700 }}>Case: {inspectedCase.case_id}</span>
+                  <span style={{
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: inspectedCase.status === "RESOLVED" ? "rgba(16, 185, 129, 0.2)" : "rgba(245, 158, 11, 0.2)",
+                    color: inspectedCase.status === "RESOLVED" ? "var(--accent-emerald)" : "var(--accent-amber)"
+                  }}>
+                    {inspectedCase.status}
+                  </span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: 13, marginBottom: "1rem" }}>
+                  <div><strong>Client:</strong> {inspectedCase.client}</div>
+                  <div><strong>Freelancer:</strong> {inspectedCase.freelancer}</div>
+                  <div><strong>Escrow Amount (Wei):</strong> {inspectedCase.amount}</div>
+                  <div><strong>AI Verdict:</strong> {inspectedCase.verdict} ({inspectedCase.client_share_pct}% refund to Client)</div>
+                </div>
+                <div style={{ fontSize: 13, marginBottom: "0.5rem" }}><strong>Requirements:</strong> {inspectedCase.requirements}</div>
+                <div style={{ fontSize: 13, marginBottom: "0.5rem" }}><strong>Deliverable:</strong> {inspectedCase.deliverable || "(Pending)"}</div>
+                {inspectedCase.reason && (
+                  <div style={{ marginTop: "1rem", padding: "10px", borderRadius: 6, background: "rgba(6, 182, 212, 0.08)", border: "1px solid rgba(6, 182, 212, 0.2)", fontSize: 13 }}>
+                    <strong>Consensus Reasoning:</strong> {inspectedCase.reason}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Create Case */}
         {activeTab === "create" && (
           <form onSubmit={handleCreateCase}>
             <h3 style={{ fontSize: "1.3rem", marginBottom: "1rem" }}>Create New Escrow Case</h3>
@@ -301,7 +398,7 @@ export default function Home() {
                 <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Case ID / Slug</label>
                 <input
                   type="text"
-                  placeholder="e.g. project_frontend_01"
+                  placeholder="e.g. project_frontend_02"
                   value={caseId}
                   onChange={(e) => setCaseId(e.target.value)}
                   style={{ width: "100%", padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-glass)", color: "#fff" }}
@@ -351,7 +448,7 @@ export default function Home() {
           </form>
         )}
 
-        {/* Tab 2: Submit Deliverable */}
+        {/* Tab 3: Submit Deliverable */}
         {activeTab === "deliver" && (
           <form onSubmit={handleSubmitDeliverable}>
             <h3 style={{ fontSize: "1.3rem", marginBottom: "1rem" }}>Submit Work Deliverable</h3>
@@ -359,7 +456,7 @@ export default function Home() {
               <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Case ID</label>
               <input
                 type="text"
-                placeholder="case_escrow_01"
+                placeholder="case_v2_01"
                 value={caseId}
                 onChange={(e) => setCaseId(e.target.value)}
                 style={{ width: "100%", padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-glass)", color: "#fff" }}
@@ -387,7 +484,7 @@ export default function Home() {
           </form>
         )}
 
-        {/* Tab 3: Dispute & Adjudicate */}
+        {/* Tab 4: Dispute & Adjudicate */}
         {activeTab === "dispute" && (
           <form onSubmit={handleAdjudicate}>
             <h3 style={{ fontSize: "1.3rem", marginBottom: "1rem" }}>AI Consensus Adjudication</h3>
@@ -398,7 +495,7 @@ export default function Home() {
               <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Target Case ID</label>
               <input
                 type="text"
-                placeholder="case_escrow_01"
+                placeholder="case_v2_01"
                 value={caseId}
                 onChange={(e) => setCaseId(e.target.value)}
                 style={{ width: "100%", padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-glass)", color: "#fff" }}
@@ -413,60 +510,6 @@ export default function Home() {
               {isProcessing ? "Arbitrators Deliberating..." : "Execute AI Arbitrator Consensus"}
             </button>
           </form>
-        )}
-
-        {/* Tab 4: Inspect State */}
-        {activeTab === "view" && (
-          <div>
-            <h3 style={{ fontSize: "1.3rem", marginBottom: "1rem" }}>Inspect On-Chain Case State</h3>
-            <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem" }}>
-              <input
-                type="text"
-                placeholder="Case ID to inspect"
-                value={inspectId}
-                onChange={(e) => setInspectId(e.target.value)}
-                style={{ flex: 1, padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-glass)", color: "#fff" }}
-              />
-              <button
-                type="button"
-                onClick={() => handleInspectCase()}
-                style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid var(--border-glass)", padding: "12px 20px", borderRadius: 8, fontWeight: 600, cursor: "pointer" }}
-              >
-                Read State
-              </button>
-            </div>
-
-            {inspectedCase && (
-              <div style={{ background: "rgba(0,0,0,0.4)", borderRadius: 12, padding: "1.5rem", border: "1px solid var(--border-glass)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
-                  <span style={{ fontSize: 18, fontWeight: 700 }}>Case: {inspectedCase.case_id}</span>
-                  <span style={{
-                    padding: "4px 10px",
-                    borderRadius: 6,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: inspectedCase.status === "RESOLVED" ? "rgba(16, 185, 129, 0.2)" : "rgba(245, 158, 11, 0.2)",
-                    color: inspectedCase.status === "RESOLVED" ? "var(--accent-emerald)" : "var(--accent-amber)"
-                  }}>
-                    {inspectedCase.status}
-                  </span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: 13, marginBottom: "1rem" }}>
-                  <div><strong>Client:</strong> {inspectedCase.client}</div>
-                  <div><strong>Freelancer:</strong> {inspectedCase.freelancer}</div>
-                  <div><strong>Amount (Wei):</strong> {inspectedCase.amount}</div>
-                  <div><strong>AI Verdict:</strong> {inspectedCase.verdict} ({inspectedCase.client_share_pct}% refund to Client)</div>
-                </div>
-                <div style={{ fontSize: 13, marginBottom: "0.5rem" }}><strong>Requirements:</strong> {inspectedCase.requirements}</div>
-                <div style={{ fontSize: 13, marginBottom: "0.5rem" }}><strong>Deliverable:</strong> {inspectedCase.deliverable || "(Pending)"}</div>
-                {inspectedCase.reason && (
-                  <div style={{ marginTop: "1rem", padding: "10px", borderRadius: 6, background: "rgba(6, 182, 212, 0.08)", border: "1px solid rgba(6, 182, 212, 0.2)", fontSize: 13 }}>
-                    <strong>Consensus Reasoning:</strong> {inspectedCase.reason}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         )}
 
         {/* Live Status Toast / Bar */}
