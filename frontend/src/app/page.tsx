@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient, chains } from "genlayer-js";
 
-const CONTRACT_ADDRESS = "0xe822FA3A2b6aA657EddBEbbFF8dC1F9926695e36";
+const CONTRACT_ADDRESS = "0x498a595eE9F003F1b6cB585B322470a583F09684";
 const EXPLORER_BASE = "https://explorer-asimov.genlayer.com";
 const TARGET_CHAIN_ID_HEX = "0x107d"; // 4221
 
@@ -35,7 +35,7 @@ export default function Home() {
   const [deliverableText, setDeliverableText] = useState("");
 
   // Inspect state - default to live on-chain case
-  const [inspectId, setInspectId] = useState("case_v2_01");
+  const [inspectId, setInspectId] = useState("case_v13_01");
   const [inspectedCase, setInspectedCase] = useState<OnChainCase | null>(null);
   const [totalCases, setTotalCases] = useState<number | null>(null);
 
@@ -128,7 +128,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchTotalCases();
-    handleInspectCase("case_v2_01");
+    handleInspectCase("case_v13_01");
   }, []);
 
   // 1. Create Case

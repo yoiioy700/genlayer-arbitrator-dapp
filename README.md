@@ -36,13 +36,14 @@ When clients and freelancers face milestone disagreements, GenLayer AI validator
 
 | Network | Chain ID | Contract Address | Status | Explorer |
 | :--- | :--- | :--- | :--- | :--- |
-| **GenLayer Asimov Testnet** | 4221 | `0xe822FA3A2b6aA657EddBEbbFF8dC1F9926695e36` | Finalized (`FINISHED_WITH_RETURN`) | [View on Asimov Explorer](https://explorer-asimov.genlayer.com/address/0xe822FA3A2b6aA657EddBEbbFF8dC1F9926695e36) |
+| **GenLayer Asimov Testnet** | 4221 | `0x498a595eE9F003F1b6cB585B322470a583F09684` | Finalized (`FINISHED_WITH_RETURN`) | [View on Asimov Explorer](https://explorer-asimov.genlayer.com/address/0x498a595eE9F003F1b6cB585B322470a583F09684) |
 
-### On-Chain Transaction Proofs:
-* **Contract Deploy:** [`0xef703e0cc9ecd9ff9b2484f02d907c4be7b2d55a8a2d17b5fa770b1de2cf4308`](https://explorer-asimov.genlayer.com/tx/0xef703e0cc9ecd9ff9b2484f02d907c4be7b2d55a8a2d17b5fa770b1de2cf4308)
-* **Create Case Tx:** [`0x586510d1a4a368f751c5078cda6c3dc1c30ef8d1adfc9163daa2503924617430`](https://explorer-asimov.genlayer.com/tx/0x586510d1a4a368f751c5078cda6c3dc1c30ef8d1adfc9163daa2503924617430)
-* **Submit Deliverable Tx:** [`0xaa359af6a77e621836f896227a1a536fea505b740b2b8aac857a94adb9c97c0c`](https://explorer-asimov.genlayer.com/tx/0xaa359af6a77e621836f896227a1a536fea505b740b2b8aac857a94adb9c97c0c)
-* **AI Consensus Adjudication Tx (RESOLVED):** [`0x5e212ffca4c4191924e456da0eb509787c8897401f258481d3d87ddcbd1446a3`](https://explorer-asimov.genlayer.com/tx/0x5e212ffca4c4191924e456da0eb509787c8897401f258481d3d87ddcbd1446a3)
+### On-Chain Transaction Proofs (v1.3.0):
+* **Contract Deploy:** [`0x331bc289302f0ec70a95018a0ac5a590dbecbed8c080a414e88f09acc0e845d4`](https://explorer-asimov.genlayer.com/tx/0x331bc289302f0ec70a95018a0ac5a590dbecbed8c080a414e88f09acc0e845d4)
+* **Create Case:** `0x97ed62c6eb94644e...` (case `case_v13_01`)
+* **Submit Deliverable:** [`0x0beebebfa46eade57da98477a355d6a6757269ae457c0608887fefa8c5371b36`](https://explorer-asimov.genlayer.com/tx/0x0beebebfa46eade57da98477a355d6a6757269ae457c0608887fefa8c5371b36) -> `FINISHED_WITH_RETURN`
+* **AI Consensus Adjudication (RESOLVED):** [`0x7ea4ea1e0b14a754647e4a2980b3e74efd4e8fc537cacfa6b8ee5aa938c1f175`](https://explorer-asimov.genlayer.com/tx/0x7ea4ea1e0b14a754647e4a2980b3e74efd4e8fc537cacfa6b8ee5aa938c1f175) -> `FINISHED_WITH_RETURN`, final state: `RESOLVED / FREELANCER / 0% client share`
+* **Self-Dealing Guard:** a `create_case` call with `freelancer == sender` finalized with a failed execution and **no state change** (`selfdeal_v13` absent, `total_cases` unchanged) — Invariant 1b verified live on this contract.
 
 ---
 
