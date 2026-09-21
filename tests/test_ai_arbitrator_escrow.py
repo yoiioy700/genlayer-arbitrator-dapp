@@ -1,74 +1,112 @@
-# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
-from genlayer import *
-from genlayer.testing import direct_mode
+"""Tests for AIArbitratorEscrow using gltest direct mode (genlayer-test >= 0.29).
+
+Run: .venv/bin/python -m pytest tests/ -q
+"""
 import pytest
 
-
-def test_initial_state():
-    """Verify initial contract state has 0 cases."""
-    with direct_mode() as dm:
-        contract = dm.deploy("contracts/AIArbitratorEscrow.py")
-        count = dm.call(contract, "get_total_cases")
-        assert count == 0
+CONTRACT = "contracts/AIArbitratorEscrow.py"
 
 
-def test_create_and_get_case():
-    """Verify case creation and storage retrieval."""
-    with direct_mode() as dm:
-        contract = dm.deploy("contracts/AIArbitratorEscrow.py")
-        case_id = dm.call(
-            contract,
-            "create_case",
-            "case_test_01",
-            "0x1111111111111111111111111111111111111111",
-            1000000000000000000,
-            "Develop responsive frontend dApp for GenLayer escrow with verification"
-        )
-        assert case_id == "case_test_01"
-
-        case_data = dm.call(contract, "get_case", "case_test_01")
-        assert case_data["case_id"] == "case_test_01"
-        assert case_data["status"] == "CREATED"
-        assert case_data["verdict"] == "PENDING"
-        assert case_data["amount"] == 1000000000000000000
+def hex_addr(a) -> str:
+    """Direct-mode addresses are raw bytes; production sends hex strings."""
+    return "0x" + bytes(a).hex()
+REQ = "Develop responsive frontend dApp for GenLayer escrow with verification"
 
 
-def test_case_collision_rejected():
-    """Verify that duplicate case_id cannot overwrite existing active escrow."""
-    with direct_mode() as dm:
-        contract = dm.deploy("contracts/AIArbitratorEscrow.py")
-        dm.call(
-            contract,
-            "create_case",
-            "case_test_duplicate",
-            "0x1111111111111111111111111111111111111111",
-            100,
-            "Initial valid requirements for first case registration"
+def test_initial_state(direct_vm, direct_deploy):
+    contract = direct_deploy(CONTRACT)
+    assert contract.get_total_cases() == 0
+
+
+def test_create_and_get_case(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT)
+    contract.create_case("case_test_01", hex_addr(direct_alice), 10**18, REQ)
+    case = contract.get_case("case_test_01")
+    assert case["case_id"] == "case_test_01"
+    assert case["status"] == "CREATED"
+    assert case["verdict"] == "PENDING"
+    assert case["amount"] == 10**18
+    assert contract.get_total_cases() == 1
+
+
+def test_case_collision_rejected(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    contract.create_case("dup", hex_addr(direct_alice), 100, REQ)
+    with direct_vm.expect_revert("Case ID already exists"):
+        contract.create_case(
+            "dup", hex_addr(direct_bob), 200, "Malicious overwrite attempt with new requirements"
         )
 
-        with pytest.raises(Exception, match="Case ID already exists"):
-            dm.call(
-                contract,
-                "create_case",
-                "case_test_duplicate",
-                "0x2222222222222222222222222222222222222222",
-                200,
-                "Malicious overwrite attempt with new requirements"
-            )
+
+def test_self_dealing_rejected(direct_vm, direct_deploy, direct_alice):
+    """Invariant 1b: freelancer == client (sender) must be rejected."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("same address"):
+        contract.create_case("selfdeal", hex_addr(direct_alice), 100, REQ)
 
 
-def test_adjudicate_unsubmitted_rejected():
-    """Verify that dispute adjudication cannot proceed before deliverable is submitted."""
-    with direct_mode() as dm:
-        contract = dm.deploy("contracts/AIArbitratorEscrow.py")
-        dm.call(
-            contract,
-            "create_case",
-            "case_premature",
-            "0x1111111111111111111111111111111111111111",
-            100,
-            "Valid requirements waiting for deliverable submission"
-        )
+def test_third_party_cannot_submit_or_adjudicate(
+    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
+):
+    """Invariants 2 & 3: only case parties may submit deliverable / adjudicate."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice  # client
+    contract.create_case("case_tp", hex_addr(direct_bob), 100, REQ)
+    direct_vm.sender = direct_bob  # freelancer
+    contract.submit_deliverable("case_tp", "Delivered: repo with passing tests")
 
-        with pytest.raises(Exception, match="Deliverable must be submitted"):
-            dm.call(contract, "adjudicate_dispute", "case_premature")
+    direct_vm.sender = direct_charlie  # outsider
+    with direct_vm.expect_revert("Only freelancer or client"):
+        contract.submit_deliverable("case_tp", "spoofed deliverable")
+    with direct_vm.expect_revert("Only client or freelancer"):
+        contract.adjudicate_dispute("case_tp")
+
+
+def test_adjudicate_unsubmitted_rejected(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    contract.create_case("case_premature", hex_addr(direct_bob), 100, REQ)
+    with direct_vm.expect_revert("Deliverable must be submitted"):
+        contract.adjudicate_dispute("case_premature")
+
+
+def test_adjudicate_happy_path_freeslancer(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    """Full lifecycle CREATED -> SUBMITTED -> RESOLVED with mocked LLM consensus."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    contract.create_case("case_ai", hex_addr(direct_bob), 1000, REQ)
+    direct_vm.sender = direct_bob
+    contract.submit_deliverable("case_ai", "Delivered repo github.com/x/y, all tests pass")
+
+    direct_vm.sender = direct_alice
+    direct_vm.mock_llm("decentralized dispute arbitrator", '{"verdict": "FREELANCER"}')
+    res = contract.adjudicate_dispute("case_ai")
+    assert res["verdict"] == "FREELANCER"
+    assert res["client_share_pct"] == 0
+
+    case = contract.get_case("case_ai")
+    assert case["status"] == "RESOLVED"
+    assert case["client_share_pct"] == 0
+
+    # Invariant 4: resolved case is immutable
+    with direct_vm.expect_revert("resolved case"):
+        contract.submit_deliverable("case_ai", "late deliverable")
+    with direct_vm.expect_revert("already been adjudicated"):
+        contract.adjudicate_dispute("case_ai")
+
+
+def test_adjudicate_llm_garbage_falls_back_split(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    """Non-JSON validator response falls back to SPLIT instead of reverting (F4)."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    contract.create_case("case_garbage", hex_addr(direct_bob), 1000, REQ)
+    contract.submit_deliverable("case_garbage", "some deliverable text")
+
+    direct_vm.mock_llm("decentralized dispute arbitrator", "not-json at all <<<>>>")
+    res = contract.adjudicate_dispute("case_garbage")
+    assert res["verdict"] == "SPLIT"
+    assert res["client_share_pct"] == 50

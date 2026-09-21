@@ -1,8 +1,13 @@
-# AI Arbitrator Escrow - GenLayer Intelligent Contract & dApp
+# AI Arbitrator — On-Chain Arbitration Record & Dispute Adjudication on GenLayer
 
-A decentralized, autonomous freelance escrow and dispute adjudication platform built on **GenLayer**.
+A decentralized, autonomous dispute **arbitration record** platform for freelance work, built on **GenLayer**.
 
-When clients and freelancers face milestone disagreements, GenLayer AI validators independently evaluate the agreed job requirements against submitted deliverables to reach consensus on payout distribution via the **Equivalence Principle** (`gl.eq_principle.strict_eq`).
+When clients and freelancers face milestone disagreements, GenLayer AI validators independently evaluate the agreed job requirements against submitted deliverables and reach consensus on a recommended resolution via the **Equivalence Principle** (`gl.eq_principle.strict_eq`).
+
+> **Scope & honest limitations (read first):**
+> * This contract is an **arbitration oracle / record**, not a custodial escrow. It never receives, holds, locks, or transfers funds. The `amount` field is informational metadata recorded by the parties; actual settlement happens **off-chain, by the parties themselves**.
+> * Verdicts are produced by LLM validators. Parties control the `requirements` and `deliverable` text fed to the model, so **prompt injection is a known structural limitation** — treat verdicts as advisory evidence, not ground truth.
+> * A failed validator response falls back deterministically to `SPLIT` (50/50) rather than reverting.
 
 ---
 
@@ -19,7 +24,8 @@ When clients and freelancers face milestone disagreements, GenLayer AI validator
 
 ## 🛡️ Security Invariants & Access Control
 
-* **Invariant 1 (Collision Resistance):** `create_case` verifies `case_id not in self.cases` to prevent malicious overwrites of active or settled escrow deposits.
+* **Invariant 1 (Collision Resistance):** `create_case` verifies `case_id not in self.cases` to prevent malicious overwrites of active or settled case records.
+* **Invariant 1b (No Self-Dealing):** `create_case` rejects `freelancer == sender`, preventing a single actor from fabricating a two-party "AI-resolved" dispute record.
 * **Invariant 2 (Deliverable Authorization):** `submit_deliverable` enforces caller verification (`sender == case.freelancer or sender == case.client`), preventing third-party deliverable tampering.
 * **Invariant 3 (Adjudication Gating):** `adjudicate_dispute` restricts callers to registered contract parties (`sender == case.client or sender == case.freelancer`) and requires `status == "SUBMITTED"` to prevent premature adjudication on empty proofs.
 * **Invariant 4 (Finite State Machine):** Cases transition strictly `CREATED -> SUBMITTED -> RESOLVED`. No retroactive mutations or double-adjudications are permitted once settled.
@@ -50,13 +56,18 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to create escrow cases, submit deliverables, and trigger AI arbitrator adjudication.
+Open [http://localhost:3000](http://localhost:3000) to record arbitration cases, submit deliverables, and trigger AI arbitrator adjudication.
 
 ---
 
 ## 🧪 Unit Tests
 
-Run direct-mode test suites:
+Tests run on [genlayer-test](https://pypi.org/project/genlayer-test/) direct mode (GenVM executed in-process, no simulator needed):
+
 ```bash
-pytest tests/
+uv venv --python 3.13 .venv
+uv pip install --python .venv/bin/python "genlayer-test>=0.29" pytest
+.venv/bin/python -m pytest tests/ -q
 ```
+
+Coverage: initial state, create/get, case-ID collision, self-dealing rejection, third-party submit/adjudicate rejection, premature adjudication rejection, full adjudication lifecycle with mocked LLM consensus (FREELANCER verdict + post-resolve immutability), and non-JSON LLM response falling back to `SPLIT`.

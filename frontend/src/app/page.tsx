@@ -292,14 +292,14 @@ export default function Home() {
       {/* Hero Section */}
       <header style={{ textAlign: "center", marginBottom: "3rem" }}>
         <h1 style={{ fontSize: "2.5rem", fontWeight: 800, marginBottom: "0.8rem", letterSpacing: "-0.03em" }}>
-          Decentralized Freelance Escrow & <span style={{ background: "var(--gradient-main)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI Dispute Resolution</span>
+          Decentralized Arbitration Record & <span style={{ background: "var(--gradient-main)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI Dispute Resolution</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", maxWidth: 680, margin: "0 auto", fontSize: "1.05rem", lineHeight: 1.6 }}>
-          Automated milestone dispute adjudication powered by GenLayer Intelligent Contracts. Independent validator LLMs evaluate deliverable fulfillment and reach deterministic consensus via the Equivalence Principle.
+          On-chain arbitration for freelance milestone disputes. GenLayer AI validators independently evaluate deliverable fulfillment and reach deterministic consensus via the Equivalence Principle. Verdicts are recorded on-chain; funds are settled off-chain by the parties themselves (no custody).
         </p>
         {totalCases !== null && (
           <div style={{ marginTop: "1rem", fontSize: 13, color: "var(--accent-emerald)" }}>
-            ● Verified On-Chain: <strong>{totalCases}</strong> total escrow cases registered
+            ● Verified On-Chain: <strong>{totalCases}</strong> total arbitration cases recorded
           </div>
         )}
       </header>
@@ -323,7 +323,7 @@ export default function Home() {
             }}
           >
             {tab === "view" && "1. Inspect On-Chain"}
-            {tab === "create" && "2. Create Escrow"}
+            {tab === "create" && "2. Record Case"}
             {tab === "deliver" && "3. Submit Deliverable"}
             {tab === "dispute" && "4. AI Adjudication"}
           </button>
@@ -374,7 +374,7 @@ export default function Home() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: 13, marginBottom: "1rem" }}>
                   <div><strong>Client:</strong> {inspectedCase.client}</div>
                   <div><strong>Freelancer:</strong> {inspectedCase.freelancer}</div>
-                  <div><strong>Escrow Amount (Wei):</strong> {inspectedCase.amount}</div>
+                  <div><strong>Disputed Amount, Wei (recorded, not held):</strong> {inspectedCase.amount}</div>
                   <div><strong>AI Verdict:</strong> {inspectedCase.verdict} ({inspectedCase.client_share_pct}% refund to Client)</div>
                 </div>
                 <div style={{ fontSize: 13, marginBottom: "0.5rem" }}><strong>Requirements:</strong> {inspectedCase.requirements}</div>
@@ -392,7 +392,7 @@ export default function Home() {
         {/* Tab 2: Create Case */}
         {activeTab === "create" && (
           <form onSubmit={handleCreateCase}>
-            <h3 style={{ fontSize: "1.3rem", marginBottom: "1rem" }}>Create New Escrow Case</h3>
+            <h3 style={{ fontSize: "1.3rem", marginBottom: "1rem" }}>Create New Arbitration Case</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Case ID / Slug</label>
@@ -418,7 +418,7 @@ export default function Home() {
               </div>
             </div>
             <div style={{ marginBottom: "1rem" }}>
-              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Escrow Amount (Wei / Tokens)</label>
+              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Disputed Amount (Wei, recorded for reference only — no funds are locked)</label>
               <input
                 type="number"
                 value={amountWei}
@@ -443,7 +443,7 @@ export default function Home() {
               disabled={isProcessing}
               style={{ background: "var(--gradient-main)", color: "#fff", border: "none", padding: "12px 24px", borderRadius: 8, fontWeight: 700, cursor: isProcessing ? "not-allowed" : "pointer" }}
             >
-              {isProcessing ? "Processing On-Chain..." : "Lock Escrow on GenLayer"}
+              {isProcessing ? "Processing On-Chain..." : "Record Case on GenLayer"}
             </button>
           </form>
         )}

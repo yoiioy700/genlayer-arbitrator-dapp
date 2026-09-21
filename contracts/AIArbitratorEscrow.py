@@ -48,6 +48,9 @@ class AIArbitratorEscrow(gl.Contract):
 
         client_addr = gl.message.sender_address
         freelancer = Address(freelancer_addr) if isinstance(freelancer_addr, (str, bytes)) else freelancer_addr
+
+        if freelancer == client_addr:
+            raise gl.vm.UserError("Client and freelancer cannot be the same address")
         
         new_case = DisputeCase(
             case_id=case_id,
@@ -132,6 +135,8 @@ Respond ONLY with valid JSON with this schema:
 }}
 """
             res = gl.nondet.exec_prompt(prompt, response_format="json")
+            if not isinstance(res, dict):
+                res = {}
             raw_v = str(res.get("verdict", "SPLIT")).strip().upper()
             if raw_v not in ["FREELANCER", "CLIENT", "SPLIT"]:
                 raw_v = "SPLIT"
@@ -141,7 +146,12 @@ Respond ONLY with valid JSON with this schema:
 
         # Reach consensus across validator committee using Equivalence Principle
         consensus_res_str = gl.eq_principle.strict_eq(evaluate_case)
-        result = json.loads(consensus_res_str)
+        try:
+            result = json.loads(consensus_res_str)
+            if not isinstance(result, dict):
+                result = {}
+        except (json.JSONDecodeError, TypeError):
+            result = {}
 
         verdict = result.get("verdict", "SPLIT")
         pct = int(result.get("client_share_pct", 50))
