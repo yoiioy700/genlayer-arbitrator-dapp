@@ -1,38 +1,48 @@
 {
   "contract_name": "AIArbitratorEscrow",
-  "version": "1.3.0-arbitration-record",
+  "version": "1.4.0-evidence-verified",
   "deployments": [
     {
       "network": "testnet-asimov",
       "chain_id": 4221,
       "rpc": "https://rpc-asimov.genlayer.com",
-      "contract_address": "0x498a595eE9F003F1b6cB585B322470a583F09684",
-      "deploy_tx": "0x331bc289302f0ec70a95018a0ac5a590dbecbed8c080a414e88f09acc0e845d4",
+      "contract_address": "0x3959A1B0e1a8aebEAeBf6f7eEA0279BDaaD98eFF",
+      "deploy_tx": "0x11f4a2431ee915c474e639a15598168e6ef6403ff8b02b46d8bf46d5d8521ddc",
       "status": "FINALIZED",
       "consensus_result": "AGREE",
       "execution_result": "FINISHED_WITH_RETURN",
-      "explorer_url": "https://explorer-asimov.genlayer.com/address/0x498a595eE9F003F1b6cB585B322470a583F09684",
+      "explorer_url": "https://explorer-asimov.genlayer.com/address/0x3959A1B0e1a8aebEAeBf6f7eEA0279BDaaD98eFF",
       "verified_transactions": {
-        "create_case": "0x97ed62c6eb94644e",
-        "submit_deliverable": "0x0beebebfa46eade5",
-        "adjudicate_dispute": "0x7ea4ea1e0b14a754647e4a2980b3e74efd4e8fc537cacfa6b8ee5aa938c1f175"
+        "self_dealing_guard": "0xccd8d7cd090dbf5d08f38aab09c9d6c91ae06c5887d28c004dee9c2f7ab1e021",
+        "create_case": "0x8bd66d734b3bfbb90c0f2157ce96327898390424123dc1c010b742254859afc4",
+        "submit_deliverable": "0xd48638086e835925bec62663063814dfe01cf53471a9222170132ee55b04ae48",
+        "adjudicate_dispute": "0xa232e8e2216f12625641fb500f8a673be7abdbdc08bde9dae7bb340ab6d7f083"
       },
       "e2e_case": {
-        "case_id": "case_v13_01",
+        "case_id": "case_v14_01",
         "final_status": "RESOLVED",
-        "verdict": "FREELANCER",
-        "client_share_pct": 0,
-        "reason": "Consensus reached by GenLayer validators: FREELANCER (0% refund to client)"
+        "verdict": "CLIENT",
+        "client_share_pct": 100,
+        "evidence_status": "VERIFIED",
+        "evidence_url": "https://raw.githubusercontent.com/yoiioy700/genlayer-arbitrator-dapp/a15cdbd668de3409898c17a5b5dfad1cc99827b2/contracts/AIArbitratorEscrow.py",
+        "evidence_hash": "e2d94f69c011a6c8f7a31230839f718778cd1f46f2cc04f825babaa92cb35931",
+        "reason": "Consensus by GenLayer validators: CLIENT (100% refund to client); evidence VERIFIED"
       },
       "self_dealing_guard_verified": {
-        "method": "state-level: create_case with freelancer == sender finalized with failed execution; 'selfdeal_v13' absent from storage, total_cases unchanged at 1, while the same sender successfully created 'case_v13_01' in the following tx. Reproducible by anyone.",
+        "method": "create_case with freelancer == sender finalized with failed execution; 'selfdeal_neg' absent from storage, total_cases unchanged.",
         "note": "on GenLayer a UserError does not revert consensus; the tx finalizes with a failed execution result and no state change"
       },
-      "previous_deployment": {
-        "contract_address": "0xe822FA3A2b6aA657EddBEbbFF8dC1F9926695e36",
-        "version": "1.2.0-deterministic-consensus",
-        "note": "superseded by 1.3.0 (adds self-dealing guard + robust LLM response handling)"
-      }
+      "previous_deployments": [
+        {
+          "contract_address": "0x498a595eE9F003F1b6cB585B322470a583F09684",
+          "version": "1.3.0-arbitration-record",
+          "adjudicate_tx": "0x7ea4ea1e0b14a754647e4a2980b3e74efd4e8fc537cacfa6b8ee5aa938c1f175"
+        },
+        {
+          "contract_address": "0xe822FA3A2b6aA657EddBEbbFF8dC1F9926695e36",
+          "version": "1.2.0-deterministic-consensus"
+        }
+      ]
     }
   ]
 }

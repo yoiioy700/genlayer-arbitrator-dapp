@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { createClient, chains } from "genlayer-js";
+import { keccak256 } from "viem";
 
-const CONTRACT_ADDRESS = "0x498a595eE9F003F1b6cB585B322470a583F09684";
+const CONTRACT_ADDRESS = "0x3959A1B0e1a8aebEAeBf6f7eEA0279BDaaD98eFF";
 const EXPLORER_BASE = "https://explorer-asimov.genlayer.com";
 const TARGET_CHAIN_ID_HEX = "0x107d"; // 4221
 
@@ -14,6 +15,9 @@ interface OnChainCase {
   amount: number;
   requirements: string;
   deliverable: string;
+  evidence_url: string;
+  evidence_hash: string;
+  evidence_status: string;
   status: string;
   verdict: string;
   client_share_pct: number;
@@ -33,9 +37,12 @@ export default function Home() {
   const [amountWei, setAmountWei] = useState("1");
   const [requirements, setRequirements] = useState("");
   const [deliverableText, setDeliverableText] = useState("");
+  const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [evidenceHash, setEvidenceHash] = useState("");
+  const [isHashing, setIsHashing] = useState(false);
 
   // Inspect state - default to live on-chain case
-  const [inspectId, setInspectId] = useState("case_v13_01");
+  const [inspectId, setInspectId] = useState("case_v14_01");
   const [inspectedCase, setInspectedCase] = useState<OnChainCase | null>(null);
   const [totalCases, setTotalCases] = useState<number | null>(null);
 
@@ -175,11 +182,36 @@ export default function Home() {
     }
   };
 
-  // 2. Submit Deliverable
+  // 2. Submit Deliverable (v1.4: evidence URL + keccak256 commitment)
+  const handleComputeEvidenceHash = async () => {
+    if (!evidenceUrl) {
+      setStatusMessage("Enter the evidence URL first.");
+      return;
+    }
+    setIsHashing(true);
+    setStatusMessage(`Fetching artifact from ${evidenceUrl} ...`);
+    try {
+      const res = await fetch(evidenceUrl, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = new Uint8Array(await res.arrayBuffer());
+      const digest = keccak256(buf).replace(/^0x/, "");
+      setEvidenceHash(digest);
+      setStatusMessage(
+        `keccak256 computed over ${buf.length} bytes. The contract will re-fetch this URL during adjudication and verify this exact digest.`
+      );
+    } catch (err: any) {
+      setStatusMessage(
+        `Fetch failed (CORS/network): ${err.message || String(err)}. Compute it locally instead: cast keccak <file>.`
+      );
+    } finally {
+      setIsHashing(false);
+    }
+  };
+
   const handleSubmitDeliverable = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!caseId || !deliverableText) {
-      setStatusMessage("Please specify Case ID and deliverable proof.");
+    if (!caseId || !deliverableText || !evidenceUrl || !evidenceHash) {
+      setStatusMessage("Please specify Case ID, deliverable proof, evidence URL, and the keccak256 commitment.");
       return;
     }
 
@@ -187,7 +219,7 @@ export default function Home() {
     if (!activeAccount) return;
 
     setIsProcessing(true);
-    setStatusMessage("Submitting deliverable on-chain via MetaMask...");
+    setStatusMessage("Submitting deliverable + evidence commitment on-chain via MetaMask...");
     setLastTxHash(null);
 
     try {
@@ -199,14 +231,14 @@ export default function Home() {
       const tx = await client.writeContract({
         address: CONTRACT_ADDRESS,
         functionName: "submit_deliverable",
-        args: [caseId, deliverableText],
+        args: [caseId, deliverableText, evidenceUrl.trim(), evidenceHash.trim().replace(/^0x/, "").toLowerCase()],
         value: 0n,
       });
 
       setLastTxHash(tx);
       setStatusMessage(`Deliverable tx broadcasted: ${tx}. Waiting for block inclusion...`);
       await client.waitForTransactionReceipt({ hash: tx });
-      setStatusMessage(`Deliverable for "${caseId}" recorded on GenLayer!`);
+      setStatusMessage(`Deliverable + evidence commitment for "${caseId}" recorded on GenLayer!`);
       setDeliverableText("");
     } catch (err: any) {
       setStatusMessage(`Error: ${err.message || String(err)}`);
@@ -295,7 +327,7 @@ export default function Home() {
           Decentralized Arbitration Record & <span style={{ background: "var(--gradient-main)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI Dispute Resolution</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", maxWidth: 680, margin: "0 auto", fontSize: "1.05rem", lineHeight: 1.6 }}>
-          On-chain arbitration for freelance milestone disputes. GenLayer AI validators independently evaluate deliverable fulfillment and reach deterministic consensus via the Equivalence Principle. Verdicts are recorded on-chain; funds are settled off-chain by the parties themselves (no custody).
+          On-chain arbitration for freelance milestone disputes. The contract itself fetches and keccak256-verifies the committed deliverable artifact (v1.4 contract-side evidence retrieval), then GenLayer AI validators independently reach deterministic consensus via the Equivalence Principle. Verdicts are recorded on-chain; funds are settled off-chain by the parties themselves (no custody).
         </p>
         {totalCases !== null && (
           <div style={{ marginTop: "1rem", fontSize: 13, color: "var(--accent-emerald)" }}>
@@ -379,6 +411,27 @@ export default function Home() {
                 </div>
                 <div style={{ fontSize: 13, marginBottom: "0.5rem" }}><strong>Requirements:</strong> {inspectedCase.requirements}</div>
                 <div style={{ fontSize: 13, marginBottom: "0.5rem" }}><strong>Deliverable:</strong> {inspectedCase.deliverable || "(Pending)"}</div>
+                <div style={{ fontSize: 13, marginBottom: "0.5rem", wordBreak: "break-all" }}>
+                  <strong>Evidence URL:</strong> {inspectedCase.evidence_url || "(Pending)"}
+                </div>
+                <div style={{ fontSize: 13, marginBottom: "0.5rem", wordBreak: "break-all" }}>
+                  <strong>Evidence Commitment (keccak256):</strong> {inspectedCase.evidence_hash || "(Pending)"}
+                </div>
+                <div style={{ fontSize: 13, marginBottom: "0.5rem" }}>
+                  <strong>Evidence Integrity:</strong>{" "}
+                  {inspectedCase.evidence_status ? (
+                    <span style={{
+                      padding: "2px 8px",
+                      borderRadius: 6,
+                      fontWeight: 700,
+                      fontSize: 12,
+                      background: inspectedCase.evidence_status === "VERIFIED" ? "rgba(16, 185, 129, 0.2)" : inspectedCase.evidence_status === "HASH_MISMATCH" ? "rgba(244, 63, 94, 0.2)" : "rgba(245, 158, 11, 0.2)",
+                      color: inspectedCase.evidence_status === "VERIFIED" ? "var(--accent-emerald)" : inspectedCase.evidence_status === "HASH_MISMATCH" ? "#fb7185" : "var(--accent-amber)"
+                    }}>
+                      {inspectedCase.evidence_status}
+                    </span>
+                  ) : "(Pending — set at adjudication)"}
+                </div>
                 {inspectedCase.reason && (
                   <div style={{ marginTop: "1rem", padding: "10px", borderRadius: 6, background: "rgba(6, 182, 212, 0.08)", border: "1px solid rgba(6, 182, 212, 0.2)", fontSize: 13 }}>
                     <strong>Consensus Reasoning:</strong> {inspectedCase.reason}
@@ -474,12 +527,48 @@ export default function Home() {
                 required
               />
             </div>
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+                Evidence URL (https — the contract itself re-fetches this during adjudication; use a raw/static artifact URL)
+              </label>
+              <input
+                type="text"
+                placeholder="https://raw.githubusercontent.com/<user>/<repo>/<commit>/artifact.txt"
+                value={evidenceUrl}
+                onChange={(e) => setEvidenceUrl(e.target.value)}
+                style={{ width: "100%", padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-glass)", color: "#fff" }}
+                required
+              />
+            </div>
+            <div style={{ marginBottom: "1.5rem" }}>
+              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+                Evidence Commitment (keccak256 of the artifact bytes)
+              </label>
+              <div style={{ display: "flex", gap: 10 }}>
+                <input
+                  type="text"
+                  placeholder="64-char hex digest committed at submission time"
+                  value={evidenceHash}
+                  onChange={(e) => setEvidenceHash(e.target.value)}
+                  style={{ flex: 1, padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-glass)", color: "#fff", fontFamily: "monospace", fontSize: 12 }}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={handleComputeEvidenceHash}
+                  disabled={isHashing}
+                  style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid var(--border-glass)", padding: "12px 16px", borderRadius: 8, fontWeight: 600, cursor: isHashing ? "wait" : "pointer", whiteSpace: "nowrap" }}
+                >
+                  {isHashing ? "Hashing..." : "Fetch & hash"}
+                </button>
+              </div>
+            </div>
             <button
               type="submit"
               disabled={isProcessing}
               style={{ background: "var(--accent-cyan)", color: "#000", border: "none", padding: "12px 24px", borderRadius: 8, fontWeight: 700, cursor: isProcessing ? "not-allowed" : "pointer" }}
             >
-              {isProcessing ? "Submitting..." : "Submit Deliverable Proof"}
+              {isProcessing ? "Submitting..." : "Submit Deliverable + Evidence Commitment"}
             </button>
           </form>
         )}
